@@ -26,9 +26,9 @@ namespace FrequencyListBuilder
             InputType inputType = InputType.Unknown;
             if (!Enum.TryParse(type, true, out inputType))
             {
-                Console.Error.WriteLine("Expected input in the following format");
-                Console.Error.WriteLine(@"FrequencyListBuilde   r directory c:\MyContentDir\en");
-                Console.Error.WriteLine(@"FrequencyListBuilder directory c:\MyContentDir\en.tar.gz");
+                Console.Error.WriteLine("Expected input in one of the following format");
+                Console.Error.WriteLine(@"FrequencyListBuilder directory c:\MyContentDir\en");
+                Console.Error.WriteLine(@"FrequencyListBuilder archive c:\MyContentDir\en.tar.gz");
                 return;
             }
 
