@@ -52,6 +52,7 @@ namespace FrequencyListBuilder
             string fileLog = Path.Combine(parentPath, $"{languageName}.log");
             string fullData = Path.Combine(parentPath, $"{languageName}_full.txt");
             string partialData = Path.Combine(parentPath, $"{languageName}_50k.txt");
+            string ignoredData = Path.Combine(parentPath, $"{languageName}_ignored.txt");
 
             Dictionary<string, long> wordFrequencyDictionary = new Dictionary<string, long>();
 
@@ -109,10 +110,26 @@ namespace FrequencyListBuilder
                 catch { }
                 //Assert.AreEqual("lv", detector.Detect("čau, man iet labi, un kā iet tev?"));
 
-                var myList = wordFrequencyDictionary.ToList().FindAll(kvp => IsValidWord(kvp.Key, detector, languageName));
-                myList.Sort((pair1, pair2) => pair2.Value.CompareTo(pair1.Value));
+                List<KeyValuePair<string, long>> validWords = new List<KeyValuePair<string, long>>();
+                List<KeyValuePair<string, long>> ignoredWords = new List<KeyValuePair<string, long>>();
 
-                LogWordlistToFile(myList, fullData, partialData);
+                //var myList = wordFrequencyDictionary.ToList().FindAll(kvp => IsValidWord(kvp.Key, detector, languageName));
+                wordFrequencyDictionary.ToList().ForEach((kvp) =>
+                {
+                    if (IsValidWord(kvp.Key, detector, languageName))
+                    {
+                        validWords.Add(kvp);
+                    }
+                    else
+                    {
+                        ignoredWords.Add(kvp);
+                    }
+                });
+
+                validWords.Sort((pair1, pair2) => pair2.Value.CompareTo(pair1.Value));
+                ignoredWords.Sort((pair1, pair2) => pair2.Value.CompareTo(pair1.Value));
+
+                LogWordlistToFile(validWords, ignoredWords, fullData, partialData, ignoredData);
             }
             catch (Exception ex)
             {
@@ -186,6 +203,9 @@ namespace FrequencyListBuilder
                     if (!pathSet.Contains(directoryPath))
                     {
                         pathSet.Add(directoryPath);
+
+                        LogMessage(logWriter, $"Processing {entry.Name}");
+
                         ProcessSubtitle(archive.GetInputStream(entry), wordFrequencyDictionary, logWriter);
                     }
                 }
@@ -208,14 +228,16 @@ namespace FrequencyListBuilder
             }
         }
 
-        private static void LogWordlistToFile(List<KeyValuePair<string, long>> wordFrequencyList, string fullDataFileName, string partialDataFileName)
+        private static void LogWordlistToFile(List<KeyValuePair<string, long>> validWordList, List<KeyValuePair<string, long>> ignoredWordList, string fullDataFileName, string partialDataFileName, string ignoredDataFileName)
         {
-            DumpListToFile(fullDataFileName, wordFrequencyList);
+            DumpListToFile(fullDataFileName, validWordList);
 
-            if (wordFrequencyList.Count > 50000)
+            if (validWordList.Count > 50000)
             {
-                DumpListToFile(partialDataFileName, wordFrequencyList.Take(50000));
+                DumpListToFile(partialDataFileName, validWordList.Take(50000));
             }
+
+            DumpListToFile(ignoredDataFileName, ignoredWordList);
         }
 
         private static void DumpListToFile(string fullDataFileName, IEnumerable<KeyValuePair<string, long>> myList)
