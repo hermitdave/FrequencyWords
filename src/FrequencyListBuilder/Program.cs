@@ -1,13 +1,12 @@
-﻿using ICSharpCode.SharpZipLib.GZip;
-using ICSharpCode.SharpZipLib.Tar;
+﻿using ICSharpCode.SharpZipLib.Tar;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Xml;
+using LanguageDetection;
+using ICSharpCode.SharpZipLib.Zip;
 
 namespace FrequencyListBuilder
 {
@@ -36,28 +35,28 @@ namespace FrequencyListBuilder
 
             //string dirPath = @"C:\OpenSubtitles2016\xml\br";
             string nameWithExtension = Path.GetFileName(pathInput);
-            string name = null;
+            string languageName = null;
             string extension = null;
-            if(inputType == InputType.Directory)
+            if (inputType == InputType.Directory)
             {
-                name = nameWithExtension;
+                languageName = nameWithExtension;
             }
             else
             {
                 int pos = nameWithExtension.IndexOf(".");
-                name = nameWithExtension.Substring(0, pos);
+                languageName = nameWithExtension.Substring(0, pos);
                 extension = nameWithExtension.Substring(pos);
             }
 
             string parentPath = Path.GetDirectoryName(pathInput);
-            string fileLog = Path.Combine(parentPath, $"{name}.log");
-            string fullData = Path.Combine(parentPath, $"{name}_full.txt");
-            string partialData = Path.Combine(parentPath, $"{name}_50k.txt");
+            string fileLog = Path.Combine(parentPath, $"{languageName}.log");
+            string fullData = Path.Combine(parentPath, $"{languageName}_full.txt");
+            string partialData = Path.Combine(parentPath, $"{languageName}_50k.txt");
 
             Dictionary<string, long> wordFrequencyDictionary = new Dictionary<string, long>();
 
             var logWriter = File.CreateText(fileLog);
-            
+
             try
             {
                 if (inputType == InputType.Directory)
@@ -70,7 +69,7 @@ namespace FrequencyListBuilder
                 {
                     FileInfo startFileInfo = new FileInfo(pathInput);
 
-                    switch(extension)
+                    switch (extension)
                     {
                         case ".xml.gz":
                             using (var stream = startFileInfo.OpenRead())
@@ -84,6 +83,7 @@ namespace FrequencyListBuilder
                             break;
 
                         case ".zip":
+                            ProcessZipArchive(startFileInfo, wordFrequencyDictionary, logWriter);
                             break;
 
                         case ".rar":
@@ -98,12 +98,23 @@ namespace FrequencyListBuilder
                     }
                 }
 
-                var myList = wordFrequencyDictionary.ToList().FindAll(kvp => IsValidWord(kvp.Key));
+                LanguageDetector detector = null;
+                try
+                {
+                    var languageDetector = new LanguageDetector();
+                    languageDetector.AddLanguages(languageName);
+
+                    detector = languageDetector;
+                }
+                catch { }
+                //Assert.AreEqual("lv", detector.Detect("čau, man iet labi, un kā iet tev?"));
+
+                var myList = wordFrequencyDictionary.ToList().FindAll(kvp => IsValidWord(kvp.Key, detector, languageName));
                 myList.Sort((pair1, pair2) => pair2.Value.CompareTo(pair1.Value));
 
                 LogWordlistToFile(myList, fullData, partialData);
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 Console.Error.WriteLine(ex.Message);
                 LogMessage(logWriter, $"Error: {ex.Message}");
@@ -163,18 +174,48 @@ namespace FrequencyListBuilder
             }
         }
 
-        private static bool IsValidWord(string key)
+        private static void ProcessZipArchive(FileInfo startFileInfo, Dictionary<string, long> wordFrequencyDictionary, StreamWriter logWriter)
         {
-            var nonCharEntries = key.Where(c => !Char.IsLetter(c));
+            HashSet<string> pathSet = new HashSet<string>();
+            var archive = new ZipFile(startFileInfo.FullName);
+            foreach (ZipEntry entry in archive)
+            {
+                if (entry.IsFile && entry.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                {
+                    string directoryPath = Path.GetDirectoryName(entry.Name).ToLowerInvariant();
+                    if (!pathSet.Contains(directoryPath))
+                    {
+                        pathSet.Add(directoryPath);
+                        ProcessSubtitle(archive.GetInputStream(entry), wordFrequencyDictionary, logWriter);
+                    }
+                }
+            }
+        }
 
-            return !nonCharEntries.Any();
+        private static bool IsValidWord(string word, LanguageDetector languageDetector, string languageName)
+        {
+            if (languageDetector != null)
+            {
+                var detectedLanguage = languageDetector.Detect(word);
+
+                return detectedLanguage != null && detectedLanguage.Equals(languageName);
+            }
+            else
+            {
+                var nonCharEntries = word.Where(c => !Char.IsLetter(c));
+
+                return !nonCharEntries.Any();
+            }
         }
 
         private static void LogWordlistToFile(List<KeyValuePair<string, long>> wordFrequencyList, string fullDataFileName, string partialDataFileName)
         {
             DumpListToFile(fullDataFileName, wordFrequencyList);
 
-            DumpListToFile(partialDataFileName, wordFrequencyList.Take(50000));
+            if (wordFrequencyList.Count > 50000)
+            {
+                DumpListToFile(partialDataFileName, wordFrequencyList.Take(50000));
+            }
         }
 
         private static void DumpListToFile(string fullDataFileName, IEnumerable<KeyValuePair<string, long>> myList)
@@ -197,7 +238,7 @@ namespace FrequencyListBuilder
             if (!startDir.Exists)
             {
                 LogMessage(logWriter, $"{startDir.FullName} does not exist. go back to parent directory");
-                
+
                 logWriter.WriteLine();
                 return;
             }
@@ -205,7 +246,7 @@ namespace FrequencyListBuilder
             var subDirectories = startDir.GetDirectories();
 
             LogMessage(logWriter, $"{startDir.Name} has {subDirectories.Length} subdirectories");
-            
+
             foreach (var subDir in subDirectories)
             {
                 ProcessFilesInDirectory(subDir, wordDictionary, logWriter);
@@ -214,7 +255,7 @@ namespace FrequencyListBuilder
             var files = startDir.GetFiles("*.xml.gz");
 
             LogMessage(logWriter, $"{startDir.Name} has {files.Length} files");
-            
+
             ProcessFilesInDirectory(files, wordDictionary, logWriter);
 
             foreach (var file in files)
@@ -256,7 +297,7 @@ namespace FrequencyListBuilder
                 catch { }
             }
 
-            foreach(var extra in rest)
+            foreach (var extra in rest)
             {
                 LogMessage(logWriter, $"Skipping {extra.FullName}");
             }
@@ -288,27 +329,27 @@ namespace FrequencyListBuilder
             }
         }
 
-        //private static void ProcessSubtitle(Stream stream, Dictionary<string, long> wordDictionary, StreamWriter logWriter)
-        //{
-        //    using (XmlReader fileReader = XmlReader.Create(stream))
-        //    {
-        //        while (!fileReader.EOF)
-        //        {
-        //            fileReader.Read();
-        //            if (fileReader.Name.Equals("w"))
-        //            {
-        //                var text = fileReader.ReadInnerXml().ToLowerInvariant();
-        //                if (wordDictionary.ContainsKey(text))
-        //                {
-        //                    wordDictionary[text]++;
-        //                }
-        //                else
-        //                {
-        //                    wordDictionary[text] = 1;
-        //                }
-        //            }
-        //        }
-        //    }
-        //}
+        private static void ProcessSubtitle(Stream stream, Dictionary<string, long> wordDictionary, StreamWriter logWriter)
+        {
+            using (XmlReader fileReader = XmlReader.Create(stream))
+            {
+                while (!fileReader.EOF)
+                {
+                    fileReader.Read();
+                    if (fileReader.Name.Equals("w"))
+                    {
+                        var text = fileReader.ReadInnerXml().ToLowerInvariant();
+                        if (wordDictionary.ContainsKey(text))
+                        {
+                            wordDictionary[text]++;
+                        }
+                        else
+                        {
+                            wordDictionary[text] = 1;
+                        }
+                    }
+                }
+            }
+        }
     }
 }
