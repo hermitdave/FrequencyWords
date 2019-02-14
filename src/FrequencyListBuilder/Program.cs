@@ -48,7 +48,13 @@ namespace FrequencyListBuilder
                 extension = nameWithExtension.Substring(pos);
             }
 
-            string parentPath = Path.GetDirectoryName(pathInput);
+            string parentPath = Path.Combine(Path.GetDirectoryName(pathInput), languageName);
+
+            if (!Directory.Exists(parentPath))
+            {
+                Directory.CreateDirectory(parentPath);
+            }
+
             string fileLog = Path.Combine(parentPath, $"{languageName}.log");
             string fullData = Path.Combine(parentPath, $"{languageName}_full.txt");
             string partialData = Path.Combine(parentPath, $"{languageName}_50k.txt");
@@ -206,7 +212,10 @@ namespace FrequencyListBuilder
 
                         LogMessage(logWriter, $"Processing {entry.Name}");
 
-                        ProcessSubtitle(archive.GetInputStream(entry), wordFrequencyDictionary, logWriter);
+                        if (!ProcessSubtitle(archive.GetInputStream(entry), wordFrequencyDictionary, logWriter))
+                        {
+                            LogMessage(logWriter, $"Error processing {entry.Name}");
+                        }
                     }
                 }
             }
@@ -351,27 +360,38 @@ namespace FrequencyListBuilder
             }
         }
 
-        private static void ProcessSubtitle(Stream stream, Dictionary<string, long> wordDictionary, StreamWriter logWriter)
+        private static bool ProcessSubtitle(Stream stream, Dictionary<string, long> wordDictionary, StreamWriter logWriter)
         {
-            using (XmlReader fileReader = XmlReader.Create(stream))
+            try
             {
-                while (!fileReader.EOF)
+                using (XmlReader fileReader = XmlReader.Create(stream))
                 {
-                    fileReader.Read();
-                    if (fileReader.Name.Equals("w"))
+                    while (!fileReader.EOF)
                     {
-                        var text = fileReader.ReadInnerXml().ToLowerInvariant();
-                        if (wordDictionary.ContainsKey(text))
+                        fileReader.Read();
+                        if (fileReader.Name.Equals("w"))
                         {
-                            wordDictionary[text]++;
-                        }
-                        else
-                        {
-                            wordDictionary[text] = 1;
+                            var text = fileReader.ReadInnerXml().ToLowerInvariant();
+                            if (wordDictionary.ContainsKey(text))
+                            {
+                                wordDictionary[text]++;
+                            }
+                            else
+                            {
+                                wordDictionary[text] = 1;
+                            }
                         }
                     }
+
+                    return true;
                 }
             }
+            catch(Exception ex)
+            {
+                Console.Error.WriteLine(ex.Message);
+            }
+
+            return false;
         }
     }
 }
