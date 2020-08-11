@@ -23,4 +23,4 @@ These data are reused by various widely used opensource projects, among which Wi
 
 ### License 
 MIT License for code.<br>
-CC-by-sa-3.0 for content.
+CC-by-sa-4.0 for content.
